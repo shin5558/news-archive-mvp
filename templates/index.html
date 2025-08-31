@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>声を消させない・議論整理（MVP）</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root{
+      --border:#e5e5e5;
+      --muted:#666;
+      --bg:#fafafa;
+      --card:#fff;
+    }
+    html,body{margin:0;padding:0;background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,"Helvetica Neue","ヒラギノ角ゴ ProN","Hiragino Kaku Gothic ProN","游ゴシック",YuGothic,"メイリオ",Meiryo,sans-serif;line-height:1.6}
+    a{color:#0b68d7;text-decoration:none}
+    header{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--border);padding:12px 16px;z-index:10}
+    header .row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    header h1{font-size:16px;margin:0}
+    main{max-width:900px;margin:18px auto;padding:0 12px}
+    .sec{margin-top:24px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px}
+    .meta{color:var(--muted);font-size:12px}
+    .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border)}
+    .badge.on{background:#eef7ff;border-color:#cbe3ff}
+    .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    .grid{display:grid;gap:12px}
+    .grid.cols-2{grid-template-columns: 1fr 1fr}
+    textarea, input[type="text"], input[type="search"], input[type="email"]{
+      width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;font:inherit
+    }
+    textarea{min-height:140px;resize:vertical}
+    button{appearance:none;border:1px solid var(--border);background:#111;color:#fff;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer}
+    button.secondary{background:#fff;color:#111}
+    .post{border:1px solid #eee;border-radius:10px;padding:12px;background:#fff}
+    .post .meta{margin-bottom:6px}
+    .truncate-3{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    details > summary{cursor:pointer}
+    .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+    .right{display:flex;justify-content:flex-end}
+    .muted{color:var(--muted)}
+    .divider{height:1px;background:var(--border);margin:8px 0}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:999px;background:#fff}
+    ul.clean{list-style:none;padding-left:0;margin:0}
+    ul.clean li{padding:6px 0;border-top:1px dashed #eee}
+    ul.clean li:first-child{border-top:none}
+    .copy-input{width:280px}
+
+    /* 先頭文をサマリに出し、展開時はプレビューを隠す */
+    details.message[open] summary .preview{ display:none }
+    details.message summary .toggle{ margin-left:.25rem }
+  </style>
+
+</head>
+<body>
+  <header>
+    <div class="row">
+      <h1>声を消させない・議論整理（MVP）</h1>
+      <span class="muted">/ <a href="/threads">複数ユーザー掲示板</a></span>
+    </div>
+  </header>
+
+  <main>
+    <!-- ヘッダー行：アクティブスレッドと公開トグル -->
+    <section class="sec">
+      <div class="row">
+        <div class="pill">
+          <strong>現在のスレッド</strong>:
+          <span>#{{ active_thread_id if active_thread_id else '-' }}</span>
+        </div>
+
+        {% set is_public = True if share_url else False %}
+        <div class="pill">
+          <span class="badge {{ 'on' if is_public else '' }}">{{ '公開中' if is_public else '非公開' }}</span>
+          {% if active_thread_id and g.current_user %}
+          <form method="post" action="/threads/{{ active_thread_id }}/publish" class="row" style="gap:6px;margin-left:6px">
+            <input type="hidden" name="make_public" value="{{ 'true' if is_public else 'false' }}">
+            <button class="secondary" type="submit">{{ '非公開にする' if is_public else '公開する' }}</button>
+          </form>
+          {% endif %}
+        </div>
+
+        {% if share_url %}
+        <div class="row">
+          <span class="muted">共有URL:</span>
+          <input class="copy-input" value="{{ share_url }}" readonly onclick="this.select()">
+          <button class="secondary" type="button" id="copyBtn">コピー</button>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <!-- AIの整理（要点→全文） -->
+    <section class="sec card" id="ai-card" {% if not result %}style="display:none"{% endif %}>
+      <h3 style="margin:0 0 8px">AIの整理（要点3つ）</h3>
+      <div id="ai-points"></div>
+      <details style="margin-top:8px">
+        <summary>全文を表示</summary>
+        <div id="ai-full" style="white-space:pre-wrap;margin-top:8px">{{ result or '' }}</div>
+      </details>
+    </section>
+
+<!-- 記事本文（折りたたみ） -->
+<section class="sec card">
+  <details {% if not article %}open{% endif %}>
+    <summary><strong>記事本文 / 要約</strong>（クリックで展開）</summary>
+    <div style="margin-top:8px">
+      {% if g.current_user %}
+      <!-- ✅ フォーム①：AIに答えてもらう（ログイン時のみ表示） -->
+      <form method="post" action="/analyze">
+        <label for="article" class="sr-only">記事本文 / 要約</label>
+        <textarea id="article" name="article" placeholder="ここに記事本文か要約を貼り付けてください。">{{ article or '' }}</textarea>
+
+        <div class="divider"></div>
+
+        <label for="comment" class="sr-only">あなたのコメント</label>
+        <textarea id="comment" name="comment" placeholder="例）禁止より、代替案をセットで出すべきでは？"></textarea>
+
+        <div class="grid cols-2" style="margin-top:8px">
+          <div>
+            <input type="text" name="thread_title" placeholder="新規スレッド名（任意）">
+          </div>
+          <div>
+            <select name="thread_id">
+              <option value="">新規スレッドで投稿</option>
+              {% for t in threads %}
+                <option value="{{ t.id }}" {% if active_thread_id and t.id==active_thread_id %}selected{% endif %}>#{{ t.id }} {{ t.title or '無題' }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+
+        <div class="right" style="margin-top:8px">
+          <button type="submit">AIに答えてもらう（⌘/Ctrl+Enter）</button>
+        </div>
+      </form>
+      {% else %}
+        <div class="muted" style="margin-top:6px">
+          {% if not g.current_user %}
+            投稿するには <a href="/login">ログイン</a> してください。
+          {% else %}
+            自分のコメントだけ投稿するには、右のプルダウンでスレッドを選ぶか、上のフォームで新規作成してください。
+          {% endif %}
+        </div>
+      {% endif %}
+      <div class="divider"></div>
+
+      <!-- ここから：本人のコメントだけ投稿するフォーム -->
+      {% if active_thread_id and g.current_user %}
+        <div class="divider"></div>
+        <form method="post" action="/threads/{{ active_thread_id }}/posts">
+          <label for="only-comment" class="sr-only">あなたのコメントだけ投稿</label>
+          <textarea id="only-comment" name="content" placeholder="あなたのコメントだけ投稿" required></textarea>
+          <div class="right" style="margin-top:8px">
+            <button type="submit" class="secondary">コメントを投稿する</button>
+          </div>
+        </form>
+      {% endif %}
+      <!-- ここまで -->
+
+    </div>
+  </details>
+</section>
+
+    <!-- タイムライン -->
+    <section class="sec">
+      <h3 style="margin:0 0 8px">このスレッドの履歴</h3>
+      {% if history and history|length > 0 %}
+        {% for m in history|reverse %} {# 新しい順に表示 #}
+          <div class="post">
+            <div class="meta">{{ '👤' if m.role=='user' else ('🤖' if m.role=='assistant' else '🛈') }} {{ m.created_at }}</div>
+            <details class="message">
+              <summary>
+                <span class="preview"></span>
+                <span class="toggle muted">（全文を表示）</span>
+              </summary>
+              <div class="full" style="white-space:pre-wrap;margin-top:6px">{{ m.content }}</div>
+            </details>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="muted">まだ投稿がありません。</div>
+      {% endif %}
+    </section>
+
+    <!-- サイド/下部のスレッド一覧 -->
+    <section class="sec card">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">スレッド</h3>
+        <a href="/threads">掲示板へ</a>
+      </div>
+      <ul class="clean">
+        {% for t in threads %}
+          <li>
+            <a href="/?thread_id={{ t.id }}">#{{ t.id }} {{ t.title or '無題' }}</a>
+            <span class="meta"> / {{ t.created_at }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  </main>
+
+  <script>
+    // クリップボードコピー
+    const copyBtn = document.getElementById('copyBtn');
+    if (copyBtn) {
+      copyBtn.addEventListener('click', async () => {
+        const inp = document.querySelector('.copy-input');
+        if (!inp) return;
+        inp.select();
+        try { await navigator.clipboard.writeText(inp.value); copyBtn.textContent = 'コピーしました'; setTimeout(()=>copyBtn.textContent='コピー',1200); } catch(e){}
+      });
+    }
+
+    // /analyze フォーム: Cmd/Ctrl+Enter で送信
+    document.addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        const ta = document.activeElement && document.activeElement.tagName === 'TEXTAREA';
+        const form = ta ? document.activeElement.closest('form') : null;
+        if (form) form.submit();
+      }
+    });
+
+    // AIの整理：要点3つを自動抽出（簡易分割）
+    (function(){
+      const full = document.getElementById('ai-full');
+      const points = document.getElementById('ai-points');
+      const card = document.getElementById('ai-card');
+      if (!full || !points || !card) return;
+      const text = (full.textContent || '').trim();
+      if (!text) { card.style.display='none'; return; }
+
+      // 句点・疑問符・感嘆符でざっくり分割（日本語簡易）
+      const sents = text
+        .replace(/\s+/g,' ')
+        .split(/(?<=[。！？\?！])/);
+
+      const top = sents.filter(s => s.trim()).slice(0,3);
+      if (top.length === 0) { points.innerHTML = '<div class="muted">要点なし</div>'; return; }
+
+      const ul = document.createElement('ul');
+      ul.className = 'clean';
+      top.forEach(s => {
+        const li = document.createElement('li'); li.textContent = s.trim();
+        ul.appendChild(li);
+      });
+      points.appendChild(ul);
+    })();
+
+
+     // タイムラインの各メッセージ：サマリに先頭1文、展開時は全文を1か所だけ表示
+    (function(){
+      const splitJA = (txt) => {
+        // 句点・疑問・感嘆の直後で分割（日本語寄せ・簡易）
+        const parts = (txt || '').trim().replace(/\s+/g,' ')
+          .split(/(?<=[。！？\?！])/);
+        const first = parts.shift() || '';
+        return { first, rest: parts.join('') };
+      };
+      document.querySelectorAll('details.message').forEach(d => {
+        const full = d.querySelector('.full');
+        const prev = d.querySelector('.preview');
+        const toggle = d.querySelector('.toggle');
+        if (!full || !prev) return;
+        const raw = (full.textContent || '').trim();
+        if (!raw) { prev.textContent = '(内容なし)'; return; }
+        const { first } = splitJA(raw);
+        // サマリは先頭1文（長ければ省略）
+        const summary = (first || raw).trim();
+        prev.textContent = summary.length > 180 ? summary.slice(0,180) + '…' : summary;
+        // 本文は常に「全文」を表示（開いたらサマリは非表示にするので重複しない）
+        full.textContent = raw;
+        d.addEventListener('toggle', () => {
+          if (toggle) toggle.textContent = d.open ? '（閉じる）' : '（全文を表示）';
+        });
+      });
+    })();
+
+  </script>
+</body>
+</html>
