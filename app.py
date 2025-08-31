@@ -73,11 +73,19 @@ except Exception:
 # テンプレート読込
 # -----------------------------
 def load_index_html() -> str:
-    try:
-        with open(INDEX_HTML_PATH, "r", encoding="utf-8") as f:
-            return f.read()
-    except Exception:
-        return f"""<!doctype html><meta charset="utf-8"><title>議論アーカイブ MVP</title>
+    candidate_paths = [
+        INDEX_HTML_PATH,
+        os.path.join(BASE_DIR, "templates", "index.html"),
+        os.path.join(BASE_DIR, "index.html"),
+    ]
+    for p in candidate_paths:
+        try:
+            if p and os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    return f.read()
+        except Exception:
+            pass
+    return f"""<!doctype html><meta charset="utf-8"><title>議論アーカイブ MVP</title>
         <h1>index.html が見つかりませんでした</h1>
         <p>探したパス: {INDEX_HTML_PATH}</p>
         <p>プロジェクト直下に <code>index.html</code> を置くか、環境変数 <code>INDEX_HTML_PATH</code> を設定してください。</p>
