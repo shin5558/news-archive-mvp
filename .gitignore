@@ -152,6 +152,25 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# ========================================
+# SQLite データベース
+*.db
+*.sqlite3
+data/
+
+# ========================================
+# 環境ファイル
+.env
+
+# ========================================
+# VSCode 設定
+.vscode/
+.history/
+
+# ========================================
+# ログファイル
+*.log
+
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
