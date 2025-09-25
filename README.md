@@ -20,24 +20,6 @@
 	•	AI: OpenAI API (ChatGPT系)
 	•	OS: Ubuntu 24.04 (Xserver VPS)
 
-🚀 セットアップ方法
-1.	リポジトリをクローン
-git clone https://github.com/ユーザー名/news-archive-mvp.git
-cd news-archive-mvp
-
-2.	仮想環境を作成 & パッケージインストール
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-3.	.env を作成して環境変数を設定
-OPENAI_API_KEY=あなたのAPIキー
-
-4.	開発環境で起動
-gunicorn -b 127.0.0.1:8000 app:app
-
-5.	本番環境では systemd + nginx を使用
-
 🌐 デモ
 
 実際に稼働しているMVP:
